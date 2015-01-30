@@ -508,13 +508,9 @@
       $$lgtm$config$$default[key] = value;
     }
 
-    /* global RSVP, require */
+    /* global RSVP */
     if (typeof RSVP !== 'undefined') {
       $$lgtm$$configure('defer', RSVP.defer);
-    } else if (typeof require === 'function') {
-      try {
-        $$lgtm$$configure('defer', require('rsvp').defer);
-      } catch (e) {}
     }
 
     function $$events$$indexOf(callbacks, callback) {
@@ -579,10 +575,10 @@
         @private
         @param {Object} object object to extend with EventTarget methods
       */
-      mixin: function(object) {
-        object.on = this.on;
-        object.off = this.off;
-        object.trigger = this.trigger;
+      'mixin': function(object) {
+        object['on']      = this['on'];
+        object['off']     = this['off'];
+        object['trigger'] = this['trigger'];
         object._promiseCallbacks = undefined;
         return object;
       },
@@ -604,7 +600,7 @@
         @param {String} eventName name of the event to listen for
         @param {Function} callback function to be called when the event is triggered.
       */
-      on: function(eventName, callback) {
+      'on': function(eventName, callback) {
         var allCallbacks = $$events$$callbacksFor(this), callbacks;
 
         callbacks = allCallbacks[eventName];
@@ -657,7 +653,7 @@
         argument is given, all callbacks will be removed from the event's callback
         queue.
       */
-      off: function(eventName, callback) {
+      'off': function(eventName, callback) {
         var allCallbacks = $$events$$callbacksFor(this), callbacks, index;
 
         if (!callback) {
@@ -702,7 +698,7 @@
         @param {Any} options optional value to be passed to any event handlers for
         the given `eventName`
       */
-      trigger: function(eventName, options) {
+      'trigger': function(eventName, options) {
         var allCallbacks = $$events$$callbacksFor(this), callbacks, callback;
 
         if (callbacks = allCallbacks[eventName]) {
@@ -720,14 +716,14 @@
       instrument: false
     };
 
-    $$events$$default.mixin($$config$$config);
+    $$events$$default['mixin']($$config$$config);
 
     function $$config$$configure(name, value) {
       if (name === 'onerror') {
         // handle for legacy users that expect the actual
         // error to be passed to their function added via
         // `RSVP.configure('onerror', someFunctionHere);`
-        $$config$$config.on('error', value);
+        $$config$$config['on']('error', value);
         return;
       }
 
@@ -763,38 +759,62 @@
 
     var $$utils1$$now = Date.now || function() { return new Date().getTime(); };
 
-    var $$utils1$$o_create = (Object.create || function(object) {
-      var o = function() { };
-      o.prototype = object;
-      return o;
+    function $$utils1$$F() { }
+
+    var $$utils1$$o_create = (Object.create || function (o) {
+      if (arguments.length > 1) {
+        throw new Error('Second argument not supported');
+      }
+      if (typeof o !== 'object') {
+        throw new TypeError('Argument must be an object');
+      }
+      $$utils1$$F.prototype = o;
+      return new $$utils1$$F();
     });
 
     var $$instrument$$queue = [];
+
+    function $$instrument$$scheduleFlush() {
+      setTimeout(function() {
+        var entry;
+        for (var i = 0; i < $$instrument$$queue.length; i++) {
+          entry = $$instrument$$queue[i];
+
+          var payload = entry.payload;
+
+          payload.guid = payload.key + payload.id;
+          payload.childGuid = payload.key + payload.childId;
+          if (payload.error) {
+            payload.stack = payload.error.stack;
+          }
+
+          $$config$$config['trigger'](entry.name, entry.payload);
+        }
+        $$instrument$$queue.length = 0;
+      }, 50);
+    }
 
     function $$instrument$$instrument(eventName, promise, child) {
       if (1 === $$instrument$$queue.push({
           name: eventName,
           payload: {
-            guid: promise._guidKey + promise._id,
+            key: promise._guidKey,
+            id:  promise._id,
             eventName: eventName,
             detail: promise._result,
-            childGuid: child && promise._guidKey + child._id,
+            childId: child && child._id,
             label: promise._label,
             timeStamp: $$utils1$$now(),
-            stack: new Error(promise._label).stack
+            error: $$config$$config["instrument-with-stack"] ? new Error(promise._label) : null
           }})) {
-
-            setTimeout(function() {
-              var entry;
-              for (var i = 0; i < $$instrument$$queue.length; i++) {
-                entry = $$instrument$$queue[i];
-                $$config$$config.trigger(entry.name, entry.payload);
-              }
-              $$instrument$$queue.length = 0;
-            }, 50);
+            $$instrument$$scheduleFlush();
           }
       }
     var $$instrument$$default = $$instrument$$instrument;
+
+    function  $$$internal$$withOwnPromise() {
+      return new TypeError('A promises callback cannot return that same promise.');
+    }
 
     function $$$internal$$noop() {}
 
@@ -849,7 +869,8 @@
     function $$$internal$$handleOwnThenable(promise, thenable) {
       if (thenable._state === $$$internal$$FULFILLED) {
         $$$internal$$fulfill(promise, thenable._result);
-      } else if (promise._state === $$$internal$$REJECTED) {
+      } else if (thenable._state === $$$internal$$REJECTED) {
+        thenable._onError = null;
         $$$internal$$reject(promise, thenable._result);
       } else {
         $$$internal$$subscribe(thenable, undefined, function(value) {
@@ -893,8 +914,8 @@
     }
 
     function $$$internal$$publishRejection(promise) {
-      if (promise._onerror) {
-        promise._onerror(promise._result);
+      if (promise._onError) {
+        promise._onError(promise._result);
       }
 
       $$$internal$$publish(promise);
@@ -919,7 +940,6 @@
       if (promise._state !== $$$internal$$PENDING) { return; }
       promise._state = $$$internal$$REJECTED;
       promise._result = reason;
-
       $$config$$config.async($$$internal$$publishRejection, promise);
     }
 
@@ -927,7 +947,7 @@
       var subscribers = parent._subscribers;
       var length = subscribers.length;
 
-      parent._onerror = null;
+      parent._onError = null;
 
       subscribers[length] = child;
       subscribers[length + $$$internal$$FULFILLED] = onFulfillment;
@@ -995,7 +1015,7 @@
         }
 
         if (promise === value) {
-          $$$internal$$reject(promise, new TypeError('A promises callback cannot return that same promise.'));
+          $$$internal$$reject(promise, $$$internal$$withOwnPromise());
           return;
         }
 
@@ -1018,10 +1038,15 @@
     }
 
     function $$$internal$$initializePromise(promise, resolver) {
+      var resolved = false;
       try {
         resolver(function resolvePromise(value){
+          if (resolved) { return; }
+          resolved = true;
           $$$internal$$resolve(promise, value);
         }, function rejectPromise(reason) {
+          if (resolved) { return; }
+          resolved = true;
           $$$internal$$reject(promise, reason);
         });
       } catch(e) {
@@ -1069,6 +1094,8 @@
       }
     }
 
+    var $$$enumerator$$default = $$$enumerator$$Enumerator;
+
     $$$enumerator$$Enumerator.prototype._validateInput = function(input) {
       return $$utils1$$isArray(input);
     };
@@ -1080,8 +1107,6 @@
     $$$enumerator$$Enumerator.prototype._init = function() {
       this._result = new Array(this.length);
     };
-
-    var $$$enumerator$$default = $$$enumerator$$Enumerator;
 
     $$$enumerator$$Enumerator.prototype._enumerate = function() {
       var length  = this.length;
@@ -1097,7 +1122,7 @@
       var c = this._instanceConstructor;
       if ($$utils1$$isMaybeThenable(entry)) {
         if (entry.constructor === c && entry._state !== $$$internal$$PENDING) {
-          entry._onerror = null;
+          entry._onError = null;
           this._settledAt(entry._state, i, entry._result);
         } else {
           this._willSettleAt(c.resolve(entry), i);
@@ -1203,7 +1228,7 @@
     function $$promise$$needsNew() {
       throw new TypeError("Failed to construct 'Promise': Please use the 'new' operator, this object constructor cannot be called as a function.");
     }
-    var $$promise$$default = $$promise$$Promise;
+
     /**
       Promise objects represent the eventual result of an asynchronous operation. The
       primary way of interacting with a promise is through its `then` method, which
@@ -1332,6 +1357,8 @@
       }
     }
 
+    var $$promise$$default = $$promise$$Promise;
+
     // deprecated
     $$promise$$Promise.cast = $$promise$resolve$$default;
     $$promise$$Promise.all = $$promise$all$$default;
@@ -1344,8 +1371,14 @@
 
       _guidKey: $$promise$$guidKey,
 
-      _onerror: function (reason) {
-        $$config$$config.trigger('error', reason);
+      _onError: function (reason) {
+        $$config$$config.async(function(promise) {
+          setTimeout(function() {
+            if (promise._onError) {
+              $$config$$config['trigger']('error', reason);
+            }
+          }, 0);
+        }, this);
       },
 
     /**
@@ -1553,7 +1586,7 @@
           return this;
         }
 
-        parent._onerror = null;
+        parent._onError = null;
 
         var child = new this.constructor($$$internal$$noop, label);
         var result = parent._result;
@@ -1663,9 +1696,9 @@
     function rsvp$defer$$defer(label) {
       var deferred = { };
 
-      deferred.promise = new $$promise$$default(function(resolve, reject) {
-        deferred.resolve = resolve;
-        deferred.reject = reject;
+      deferred['promise'] = new $$promise$$default(function(resolve, reject) {
+        deferred['resolve'] = resolve;
+        deferred['reject'] = reject;
       }, label);
 
       return deferred;

@@ -31,13 +31,9 @@ function configure(key, value) {
   lgtm$config$$.default[key] = value;
 }
 
-/* global RSVP, require */
+/* global RSVP */
 if (typeof RSVP !== 'undefined') {
   configure('defer', RSVP.defer);
-} else if (typeof require === 'function') {
-  try {
-    configure('defer', require('rsvp').defer);
-  } catch (e) {}
 }
 
 exports.configure = configure, exports.validator = validator, exports.helpers = helpers, exports.ObjectValidator = lgtm$object_validator$$.default;

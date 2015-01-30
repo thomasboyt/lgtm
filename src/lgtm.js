@@ -35,13 +35,9 @@ function configure(key, value) {
   config[key] = value;
 }
 
-/* global RSVP, require */
+/* global RSVP */
 if (typeof RSVP !== 'undefined') {
   configure('defer', RSVP.defer);
-} else if (typeof require === 'function') {
-  try {
-    configure('defer', require('rsvp').defer);
-  } catch (e) {}
 }
 
 export { configure, validator, helpers, ObjectValidator };

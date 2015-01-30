@@ -508,13 +508,9 @@
       $$lgtm$config$$default[key] = value;
     }
 
-    /* global RSVP, require */
+    /* global RSVP */
     if (typeof RSVP !== 'undefined') {
       $$lgtm$$configure('defer', RSVP.defer);
-    } else if (typeof require === 'function') {
-      try {
-        $$lgtm$$configure('defer', require('rsvp').defer);
-      } catch (e) {}
     }
 
     var lgtm$umd$$LGTM = {
